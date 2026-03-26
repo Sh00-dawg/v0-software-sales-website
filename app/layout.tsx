@@ -7,8 +7,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'DevFlow - Build Faster, Ship Smarter',
-  description: 'The all-in-one development platform that helps teams ship quality software faster. From code to production in minutes.',
+  title: 'Zentro Services - Premium Software Solutions',
+  description: 'Powerful software solutions designed to boost your productivity. Get started instantly with our suite of professional tools.',
   generator: 'v0.app',
   icons: {
     icon: [

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Code2 } from 'lucide-react'
+import { Zap } from 'lucide-react'
 
 export function Header() {
   return (
@@ -7,9 +7,9 @@ export function Header() {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-            <Code2 className="h-5 w-5 text-primary-foreground" />
+            <Zap className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-semibold tracking-tight">DevFlow</span>
+          <span className="text-xl font-semibold tracking-tight">Zentro Services</span>
         </Link>
         <nav className="flex items-center gap-6">
           <Link
