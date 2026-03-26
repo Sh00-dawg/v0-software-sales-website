@@ -3,10 +3,12 @@ import Link from 'next/link'
 import { CheckCircle2, ArrowLeft } from 'lucide-react'
 
 import { getCheckoutSession } from '@/app/actions/stripe'
+import { recordPurchase } from '@/app/actions/analytics'
 import { PRODUCTS } from '@/lib/products'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { ReviewForm } from '@/components/review-form'
+import { PurchaseTracker } from '@/components/purchase-tracker'
 
 interface ReviewPageProps {
   searchParams: Promise<{ session_id?: string }>
@@ -29,6 +31,11 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
 
   return (
     <div className="flex min-h-screen flex-col">
+      <PurchaseTracker 
+        productId={session.productId}
+        amountInCents={product?.priceInCents || 0}
+        customerEmail={session.customerEmail}
+      />
       <Header />
       <main className="flex-1 py-12">
         <div className="mx-auto max-w-2xl px-4">

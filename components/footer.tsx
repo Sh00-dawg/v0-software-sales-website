@@ -17,13 +17,19 @@ export function Footer() {
               href="/#products"
               className="text-sm text-muted-foreground hover:text-foreground"
             >
-              Pricing
+              Products
             </Link>
             <Link
               href="/reviews"
               className="text-sm text-muted-foreground hover:text-foreground"
             >
               Reviews
+            </Link>
+            <Link
+              href="/dev/login"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Developer
             </Link>
           </nav>
           <p className="text-sm text-muted-foreground">

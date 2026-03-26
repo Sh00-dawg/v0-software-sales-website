@@ -1,18 +1,25 @@
 'use client'
 
 import Link from 'next/link'
-import { Check } from 'lucide-react'
+import { Code2, Palette, BarChart3, Shield, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PRODUCTS } from '@/lib/products'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
+
+const icons: Record<string, React.ComponentType<{ className?: string }>> = {
+  code: Code2,
+  palette: Palette,
+  chart: BarChart3,
+  shield: Shield,
+}
 
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.15,
+      staggerChildren: 0.1,
     },
   },
 }
@@ -23,7 +30,7 @@ const cardVariants = {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 0.6,
+      duration: 0.5,
       ease: 'easeOut',
     },
   },
@@ -41,10 +48,10 @@ export function Pricing() {
           className="text-center"
         >
           <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-            Simple, transparent pricing
+            Our Software Products
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
-            Choose the plan that fits your needs. No hidden fees.
+            Professional tools designed to boost your productivity
           </p>
         </motion.div>
         <motion.div
@@ -52,69 +59,108 @@ export function Pricing() {
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true }}
-          className="mt-16 grid gap-8 lg:grid-cols-3"
+          className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-4"
         >
-          {PRODUCTS.map((product) => (
-            <motion.div
-              key={product.id}
-              variants={cardVariants}
-              whileHover={{ scale: 1.02, y: -8 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-              className={cn(
-                'relative flex flex-col rounded-2xl border bg-card p-8',
-                product.popular
-                  ? 'border-primary shadow-xl shadow-primary/10'
-                  : 'border-border'
-              )}
-            >
-              {product.popular && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.5, duration: 0.3 }}
-                  className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-primary px-4 py-1 text-sm font-medium text-primary-foreground"
-                >
-                  Most Popular
-                </motion.div>
-              )}
-              <div className="mb-6">
-                <h3 className="text-xl font-semibold">{product.name}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {product.description}
-                </p>
-              </div>
-              <div className="mb-6">
-                <span className="text-4xl font-bold">
-                  ${(product.priceInCents / 100).toFixed(0)}
-                </span>
-                <span className="text-muted-foreground">/month</span>
-              </div>
-              <ul className="mb-8 flex-1 space-y-3">
-                {product.features.map((feature, index) => (
-                  <motion.li
-                    key={feature}
-                    initial={{ opacity: 0, x: -10 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: index * 0.1 }}
-                    className="flex items-start gap-3"
-                  >
-                    <Check className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                    <span className="text-sm text-muted-foreground">
-                      {feature}
-                    </span>
-                  </motion.li>
-                ))}
-              </ul>
-              <Button
-                asChild
-                variant={product.popular ? 'default' : 'outline'}
-                className="w-full transition-transform hover:scale-105"
+          {PRODUCTS.map((product) => {
+            const IconComponent = icons[product.icon] || Code2
+            return (
+              <motion.div
+                key={product.id}
+                variants={cardVariants}
+                whileHover={{ scale: 1.03, y: -5 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                className={cn(
+                  'group relative flex flex-col overflow-hidden rounded-2xl border bg-card',
+                  product.popular
+                    ? 'border-primary shadow-lg shadow-primary/20'
+                    : 'border-border'
+                )}
               >
-                <Link href={`/checkout/${product.id}`}>Get Started</Link>
-              </Button>
-            </motion.div>
-          ))}
+                {product.popular && (
+                  <div className="absolute right-3 top-3 z-10 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                    Popular
+                  </div>
+                )}
+                
+                {/* Product Box Header */}
+                <div className={cn(
+                  'relative flex h-40 items-center justify-center bg-gradient-to-br',
+                  product.color
+                )}>
+                  <div className="absolute inset-0 bg-black/10" />
+                  <motion.div
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                    transition={{ type: 'spring', stiffness: 300 }}
+                    className="relative z-10 flex h-20 w-20 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm"
+                  >
+                    <IconComponent className="h-10 w-10 text-white" />
+                  </motion.div>
+                </div>
+                
+                {/* Product Info */}
+                <div className="flex flex-1 flex-col p-5">
+                  <div className="mb-3">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      {product.tagline}
+                    </p>
+                    <h3 className="mt-1 text-lg font-bold">{product.name}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      v{product.version}
+                    </p>
+                  </div>
+                  
+                  <p className="mb-4 flex-1 text-sm text-muted-foreground line-clamp-2">
+                    {product.description}
+                  </p>
+                  
+                  {/* Platform badges */}
+                  <div className="mb-4 flex flex-wrap gap-1">
+                    {product.platform.map((p) => (
+                      <span
+                        key={p}
+                        className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground"
+                      >
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                  
+                  {/* Features preview */}
+                  <ul className="mb-4 space-y-1.5">
+                    {product.features.slice(0, 3).map((feature) => (
+                      <li key={feature} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Check className="h-3 w-3 text-primary" />
+                        {feature}
+                      </li>
+                    ))}
+                    {product.features.length > 3 && (
+                      <li className="text-xs text-muted-foreground/70">
+                        +{product.features.length - 3} more features
+                      </li>
+                    )}
+                  </ul>
+                  
+                  {/* Price and CTA */}
+                  <div className="mt-auto border-t border-border pt-4">
+                    <div className="mb-3 flex items-baseline justify-between">
+                      <span className="text-2xl font-bold">
+                        ${(product.priceInCents / 100).toFixed(0)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">one-time</span>
+                    </div>
+                    <Button
+                      asChild
+                      variant={product.popular ? 'default' : 'outline'}
+                      className="w-full transition-all group-hover:shadow-md"
+                      size="sm"
+                    >
+                      <Link href={`/checkout/${product.id}`}>Buy Now</Link>
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            )
+          })}
         </motion.div>
       </div>
     </section>

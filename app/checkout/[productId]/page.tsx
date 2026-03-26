@@ -36,7 +36,7 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
             <h1 className="text-3xl font-bold">Complete your purchase</h1>
             <p className="mt-2 text-muted-foreground">
               You&apos;re purchasing {product.name} for $
-              {(product.priceInCents / 100).toFixed(2)}/month
+              {(product.priceInCents / 100).toFixed(0)} (one-time license)
             </p>
           </div>
 
