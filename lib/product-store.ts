@@ -1,11 +1,14 @@
 'use server'
 
+import { promises as fs } from 'fs'
+import path from 'path'
 import { PRODUCTS, type Product } from './products'
 
-// In-memory store for product modifications (in production, use a database)
-let productOverrides: Map<string, Partial<Product> & { imageUrl?: string; filePathname?: string }> = new Map()
+export interface ProductOverride extends Partial<Product> {
+  imageUrl?: string
+  filePathname?: string
+}
 
-// Product keys store
 export interface ProductKey {
   id: string
   productId: string
@@ -16,9 +19,6 @@ export interface ProductKey {
   createdAt: number
 }
 
-let productKeys: ProductKey[] = []
-
-// Customer purchases with keys
 export interface CustomerPurchase {
   id: string
   sessionId: string
@@ -28,105 +28,153 @@ export interface CustomerPurchase {
   purchasedAt: number
 }
 
-let customerPurchases: CustomerPurchase[] = []
-
-// Get all products with overrides applied
-export async function getProducts(): Promise<(Product & { imageUrl?: string; filePathname?: string })[]> {
-  return PRODUCTS.map((product) => {
-    const override = productOverrides.get(product.id)
-    if (override) {
-      return { ...product, ...override }
-    }
-    return product
-  })
+interface StoreData {
+  productOverrides: Record<string, ProductOverride>
+  productKeys: ProductKey[]
+  customerPurchases: CustomerPurchase[]
 }
 
-// Get single product with overrides
-export async function getProduct(id: string): Promise<(Product & { imageUrl?: string; filePathname?: string }) | undefined> {
+const STORE_PATH = path.join(process.cwd(), 'data', 'product-store.json')
+
+const defaultStore: StoreData = {
+  productOverrides: {},
+  productKeys: [],
+  customerPurchases: [],
+}
+
+async function ensureStoreFile() {
+  await fs.mkdir(path.dirname(STORE_PATH), { recursive: true })
+
+  try {
+    await fs.access(STORE_PATH)
+  } catch {
+    await fs.writeFile(STORE_PATH, JSON.stringify(defaultStore, null, 2), 'utf8')
+  }
+}
+
+async function readStore(): Promise<StoreData> {
+  await ensureStoreFile()
+
+  try {
+    const raw = await fs.readFile(STORE_PATH, 'utf8')
+    const parsed = JSON.parse(raw) as Partial<StoreData>
+
+    return {
+      productOverrides: parsed.productOverrides ?? {},
+      productKeys: parsed.productKeys ?? [],
+      customerPurchases: parsed.customerPurchases ?? [],
+    }
+  } catch {
+    return defaultStore
+  }
+}
+
+async function writeStore(data: StoreData): Promise<void> {
+  await ensureStoreFile()
+  await fs.writeFile(STORE_PATH, JSON.stringify(data, null, 2), 'utf8')
+}
+
+export async function getProducts(): Promise<(Product & { imageUrl?: string; filePathname?: string })[]> {
+  const store = await readStore()
+
+  return PRODUCTS.map((product) => ({
+    ...product,
+    ...(store.productOverrides[product.id] ?? {}),
+  }))
+}
+
+export async function getProduct(
+  id: string
+): Promise<(Product & { imageUrl?: string; filePathname?: string }) | undefined> {
   const product = PRODUCTS.find((p) => p.id === id)
   if (!product) return undefined
-  
-  const override = productOverrides.get(id)
-  if (override) {
-    return { ...product, ...override }
+
+  const store = await readStore()
+  return {
+    ...product,
+    ...(store.productOverrides[id] ?? {}),
   }
-  return product
 }
 
-// Update product
-export async function updateProduct(
-  id: string,
-  updates: Partial<Product> & { imageUrl?: string; filePathname?: string }
-): Promise<void> {
-  const existing = productOverrides.get(id) || {}
-  productOverrides.set(id, { ...existing, ...updates })
+export async function updateProduct(id: string, updates: ProductOverride): Promise<void> {
+  const store = await readStore()
+  const existing = store.productOverrides[id] ?? {}
+  store.productOverrides[id] = { ...existing, ...updates }
+  await writeStore(store)
 }
 
-// Add product key
 export async function addProductKey(productId: string, key: string): Promise<ProductKey> {
+  const store = await readStore()
   const newKey: ProductKey = {
-    id: `key-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `key-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
     productId,
     key,
     isUsed: false,
     createdAt: Date.now(),
   }
-  productKeys.push(newKey)
+
+  store.productKeys.push(newKey)
+  await writeStore(store)
   return newKey
 }
 
-// Add multiple product keys
 export async function addProductKeys(productId: string, keys: string[]): Promise<ProductKey[]> {
-  const newKeys = keys.map((key) => ({
-    id: `key-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  const store = await readStore()
+  const timestamp = Date.now()
+  const newKeys: ProductKey[] = keys.map((key, index) => ({
+    id: `key-${timestamp}-${index}-${Math.random().toString(36).slice(2, 11)}`,
     productId,
     key,
     isUsed: false,
-    createdAt: Date.now(),
+    createdAt: timestamp,
   }))
-  productKeys.push(...newKeys)
+
+  store.productKeys.push(...newKeys)
+  await writeStore(store)
   return newKeys
 }
 
-// Get available keys for a product
 export async function getAvailableKeys(productId: string): Promise<ProductKey[]> {
-  return productKeys.filter((k) => k.productId === productId && !k.isUsed)
+  const store = await readStore()
+  return store.productKeys.filter((k) => k.productId === productId && !k.isUsed)
 }
 
-// Get all keys for a product
 export async function getAllKeys(productId: string): Promise<ProductKey[]> {
-  return productKeys.filter((k) => k.productId === productId)
+  const store = await readStore()
+  return store.productKeys.filter((k) => k.productId === productId)
 }
 
-// Get all keys
 export async function getAllProductKeys(): Promise<ProductKey[]> {
-  return productKeys
+  const store = await readStore()
+  return store.productKeys
 }
 
-// Use a key for a customer
 export async function useProductKey(productId: string, customerEmail: string): Promise<string | null> {
-  const availableKey = productKeys.find((k) => k.productId === productId && !k.isUsed)
+  const store = await readStore()
+  const availableKey = store.productKeys.find((k) => k.productId === productId && !k.isUsed)
   if (!availableKey) return null
-  
+
   availableKey.isUsed = true
   availableKey.usedBy = customerEmail
   availableKey.usedAt = Date.now()
-  
+  await writeStore(store)
+
   return availableKey.key
 }
 
-// Delete a key
 export async function deleteProductKey(keyId: string): Promise<void> {
-  productKeys = productKeys.filter((k) => k.id !== keyId)
+  const store = await readStore()
+  store.productKeys = store.productKeys.filter((k) => k.id !== keyId)
+  await writeStore(store)
 }
 
-// Record a customer purchase
 export async function recordCustomerPurchase(
   sessionId: string,
   productId: string,
   customerEmail: string,
   productKey?: string
 ): Promise<CustomerPurchase> {
+  const store = await readStore()
   const purchase: CustomerPurchase = {
     id: `purchase-${Date.now()}`,
     sessionId,
@@ -135,21 +183,23 @@ export async function recordCustomerPurchase(
     productKey,
     purchasedAt: Date.now(),
   }
-  customerPurchases.push(purchase)
+
+  store.customerPurchases.push(purchase)
+  await writeStore(store)
   return purchase
 }
 
-// Get customer purchase by session
 export async function getCustomerPurchase(sessionId: string): Promise<CustomerPurchase | undefined> {
-  return customerPurchases.find((p) => p.sessionId === sessionId)
+  const store = await readStore()
+  return store.customerPurchases.find((p) => p.sessionId === sessionId)
 }
 
-// Get all customer purchases
 export async function getAllCustomerPurchases(): Promise<CustomerPurchase[]> {
-  return customerPurchases
+  const store = await readStore()
+  return store.customerPurchases
 }
 
-// Check if customer has purchased a product
 export async function hasCustomerPurchased(sessionId: string): Promise<boolean> {
-  return customerPurchases.some((p) => p.sessionId === sessionId)
+  const store = await readStore()
+  return store.customerPurchases.some((p) => p.sessionId === sessionId)
 }
