@@ -15,14 +15,15 @@ import {
   getAllCustomerPurchases,
   type ProductKey,
   type CustomerPurchase,
+  type DBProduct,
 } from '@/lib/product-store'
 import type { Product } from '@/lib/products'
 
-export async function fetchProducts() {
+export async function fetchProducts(): Promise<DBProduct[]> {
   return getProducts()
 }
 
-export async function fetchProduct(id: string) {
+export async function fetchProduct(id: string): Promise<DBProduct | undefined> {
   return getProduct(id)
 }
 
@@ -62,13 +63,15 @@ export async function assignKeyToCustomer(productId: string, customerEmail: stri
 export async function createCustomerPurchase(
   sessionId: string,
   productId: string,
-  customerEmail: string
+  customerEmail: string,
+  customerName?: string,
+  amountInCents?: number
 ) {
   // First, try to assign a key
   const key = await useProductKey(productId, customerEmail)
   
   // Record the purchase
-  return recordCustomerPurchase(sessionId, productId, customerEmail, key || undefined)
+  return recordCustomerPurchase(sessionId, productId, customerEmail, customerName, amountInCents, key || undefined)
 }
 
 export async function fetchCustomerPurchase(sessionId: string) {

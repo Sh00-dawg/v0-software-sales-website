@@ -34,7 +34,7 @@ import {
 } from '@/app/actions/products'
 import type { AnalyticsData } from '@/lib/analytics'
 import type { Product } from '@/lib/products'
-import type { ProductKey } from '@/lib/product-store'
+import type { ProductKey, DBProduct } from '@/lib/product-store'
 
 interface Stats {
   totalPageViews: number
@@ -52,7 +52,7 @@ export default function DevDashboardPage() {
   const [isAuthed, setIsAuthed] = useState(false)
   const [stats, setStats] = useState<Stats | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
-  const [products, setProducts] = useState<(Product & { imageUrl?: string; filePathname?: string })[]>([])
+  const [products, setProducts] = useState<DBProduct[]>([])
   const [productKeys, setProductKeys] = useState<ProductKey[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
