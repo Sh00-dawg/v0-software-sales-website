@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 // Simple hardcoded credentials for demo (in production, use proper auth)
-const DEV_PASSWORD = 'shoopdawgandvoidaretuff'
+const DEV_PASSWORD = 'test'
 
 export default function DevLoginPage() {
   const [password, setPassword] = useState('')
