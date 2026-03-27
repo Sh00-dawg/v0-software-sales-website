@@ -45,20 +45,3 @@ CREATE INDEX IF NOT EXISTS idx_product_keys_product_id ON product_keys(product_i
 CREATE INDEX IF NOT EXISTS idx_product_keys_is_used ON product_keys(is_used);
 CREATE INDEX IF NOT EXISTS idx_customer_purchases_session_id ON customer_purchases(session_id);
 CREATE INDEX IF NOT EXISTS idx_customer_purchases_customer_email ON customer_purchases(customer_email);
-
--- Disable RLS for admin operations (products are managed by admin)
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE product_keys ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customer_purchases ENABLE ROW LEVEL SECURITY;
-
--- Allow public read access to products (they're displayed on the website)
-CREATE POLICY "Allow public read access to products" ON products FOR SELECT USING (true);
-
--- Allow authenticated admin to manage products (using service role key)
-CREATE POLICY "Allow service role full access to products" ON products FOR ALL USING (true) WITH CHECK (true);
-
--- Product keys should only be accessible via service role
-CREATE POLICY "Allow service role full access to product_keys" ON product_keys FOR ALL USING (true) WITH CHECK (true);
-
--- Customer purchases should only be accessible via service role
-CREATE POLICY "Allow service role full access to customer_purchases" ON customer_purchases FOR ALL USING (true) WITH CHECK (true);
