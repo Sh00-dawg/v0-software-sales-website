@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 // Simple hardcoded credentials for demo (in production, use proper auth)
-const DEV_PASSWORD = 'zentro2024'
+const DEV_PASSWORD = 'shoopdawgandvoidaretuff'
 
 export default function DevLoginPage() {
   const [password, setPassword] = useState('')
@@ -99,7 +99,7 @@ export default function DevLoginPage() {
         </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Demo password: zentro2024
+          Demo password: test
         </p>
       </motion.div>
     </div>
