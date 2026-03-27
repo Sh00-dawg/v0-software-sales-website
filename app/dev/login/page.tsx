@@ -99,7 +99,6 @@ export default function DevLoginPage() {
         </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Demo password: test
         </p>
       </motion.div>
     </div>
