@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Code2, Palette, BarChart3, Shield, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { Product } from '@/lib/products'
+import { PRODUCTS } from '@/lib/products'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 
@@ -36,9 +36,7 @@ const cardVariants = {
   },
 }
 
-type ProductWithOverrides = Product & { imageUrl?: string; filePathname?: string }
-
-export function Pricing({ products }: { products: ProductWithOverrides[] }) {
+export function Pricing() {
   return (
     <section id="products" className="scroll-mt-16 py-24">
       <div className="mx-auto max-w-6xl px-4">
@@ -63,7 +61,7 @@ export function Pricing({ products }: { products: ProductWithOverrides[] }) {
           viewport={{ once: true }}
           className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-4"
         >
-          {products.map((product) => {
+          {PRODUCTS.map((product) => {
             const IconComponent = icons[product.icon] || Code2
             return (
               <motion.div
@@ -84,6 +82,7 @@ export function Pricing({ products }: { products: ProductWithOverrides[] }) {
                   </div>
                 )}
 
+                {/* Product Box Header */}
                 <div className={cn(
                   'relative flex h-40 items-center justify-center bg-gradient-to-br',
                   product.color
@@ -98,6 +97,7 @@ export function Pricing({ products }: { products: ProductWithOverrides[] }) {
                   </motion.div>
                 </div>
 
+                {/* Product Info */}
                 <div className="flex flex-1 flex-col p-5">
                   <div className="mb-3">
                     <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -113,6 +113,7 @@ export function Pricing({ products }: { products: ProductWithOverrides[] }) {
                     {product.description}
                   </p>
 
+                  {/* Platform badges */}
                   <div className="mb-4 flex flex-wrap gap-1">
                     {product.platform.map((p) => (
                       <span
@@ -124,6 +125,7 @@ export function Pricing({ products }: { products: ProductWithOverrides[] }) {
                     ))}
                   </div>
 
+                  {/* Features preview */}
                   <ul className="mb-4 space-y-1.5">
                     {product.features.slice(0, 3).map((feature) => (
                       <li key={feature} className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -138,6 +140,7 @@ export function Pricing({ products }: { products: ProductWithOverrides[] }) {
                     )}
                   </ul>
 
+                  {/* Price and CTA */}
                   <div className="mt-auto border-t border-border pt-4">
                     <div className="mb-3 flex items-baseline justify-between">
                       <span className="text-2xl font-bold">
