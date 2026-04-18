@@ -1,104 +1,106 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
-
 // Admin accounts store
 export interface AdminAccount {
   id: string
   username: string
+  passwordHash: string
   name: string
   role: 'admin' | 'moderator'
   createdAt: number
   lastLogin?: number
 }
 
+// Simple hash function for demo (in production use bcrypt)
+function simpleHash(password: string): string {
+  let hash = 0
+  for (let i = 0; i < password.length; i++) {
+    const char = password.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash
+  }
+  return 'hash_' + Math.abs(hash).toString(16)
+}
+
+// Default admin account
+const defaultAdmin: AdminAccount = {
+  id: 'admin-1',
+  username: 'admin',
+  passwordHash: simpleHash('admin123'),
+  name: 'Administrator',
+  role: 'admin',
+  createdAt: Date.now(),
+}
+
+// In-memory store for admin accounts
+let adminAccounts: AdminAccount[] = [defaultAdmin]
+
+// Active sessions
+interface Session {
+  token: string
+  adminId: string
+  createdAt: number
+  expiresAt: number
+}
+
+let sessions: Session[] = []
+
+// Generate a random token
+function generateToken(): string {
+  return 'session_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 16)
+}
+
 // Login
-export async function loginAdmin(username: string, password: string): Promise<{ success: boolean; token?: string; admin?: AdminAccount; error?: string }> {
-  const supabase = await createClient()
+export async function loginAdmin(username: string, password: string): Promise<{ success: boolean; token?: string; admin?: Omit<AdminAccount, 'passwordHash'>; error?: string }> {
+  const passwordHash = simpleHash(password)
+  const admin = adminAccounts.find(a => a.username === username && a.passwordHash === passwordHash)
   
-  const { data: admin, error } = await supabase
-    .from('admins')
-    .select('*')
-    .eq('username', username)
-    .eq('password', password)
-    .single()
-  
-  if (error || !admin) {
+  if (!admin) {
     return { success: false, error: 'Invalid username or password' }
   }
   
   // Update last login
-  await supabase
-    .from('admins')
-    .update({ last_login: new Date().toISOString() })
-    .eq('id', admin.id)
+  admin.lastLogin = Date.now()
   
-  return {
-    success: true,
-    token: admin.id,
-    admin: {
-      id: admin.id,
-      username: admin.username,
-      name: admin.username, // Use username as name for now
-      role: admin.role as 'admin' | 'moderator',
-      createdAt: new Date(admin.created_at).getTime(),
-      lastLogin: admin.last_login ? new Date(admin.last_login).getTime() : undefined
-    }
+  // Create session
+  const token = generateToken()
+  const session: Session = {
+    token,
+    adminId: admin.id,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
   }
+  sessions.push(session)
+  
+  const { passwordHash: _, ...adminWithoutPassword } = admin
+  return { success: true, token, admin: adminWithoutPassword }
 }
 
 // Validate session
-export async function validateSession(token: string): Promise<{ valid: boolean; admin?: AdminAccount }> {
-  const supabase = await createClient()
+export async function validateSession(token: string): Promise<{ valid: boolean; admin?: Omit<AdminAccount, 'passwordHash'> }> {
+  const session = sessions.find(s => s.token === token && s.expiresAt > Date.now())
   
-  const { data: admin, error } = await supabase
-    .from('admins')
-    .select('*')
-    .eq('id', token)
-    .single()
-  
-  if (error || !admin) {
+  if (!session) {
     return { valid: false }
   }
   
-  return {
-    valid: true,
-    admin: {
-      id: admin.id,
-      username: admin.username,
-      name: admin.username,
-      role: admin.role as 'admin' | 'moderator',
-      createdAt: new Date(admin.created_at).getTime(),
-      lastLogin: admin.last_login ? new Date(admin.last_login).getTime() : undefined
-    }
+  const admin = adminAccounts.find(a => a.id === session.adminId)
+  if (!admin) {
+    return { valid: false }
   }
+  
+  const { passwordHash: _, ...adminWithoutPassword } = admin
+  return { valid: true, admin: adminWithoutPassword }
 }
 
-// Logout (no-op for simple token-based auth)
-export async function logoutAdmin(_token: string): Promise<void> {
-  // With Supabase, we just clear the client-side token
-  return
+// Logout
+export async function logoutAdmin(token: string): Promise<void> {
+  sessions = sessions.filter(s => s.token !== token)
 }
 
 // Get all admins (for admin management)
-export async function getAllAdmins(): Promise<AdminAccount[]> {
-  const supabase = await createClient()
-  
-  const { data, error } = await supabase
-    .from('admins')
-    .select('*')
-    .order('created_at', { ascending: true })
-  
-  if (error) return []
-  
-  return (data || []).map(admin => ({
-    id: admin.id,
-    username: admin.username,
-    name: admin.username,
-    role: admin.role as 'admin' | 'moderator',
-    createdAt: new Date(admin.created_at).getTime(),
-    lastLogin: admin.last_login ? new Date(admin.last_login).getTime() : undefined
-  }))
+export async function getAllAdmins(): Promise<Omit<AdminAccount, 'passwordHash'>[]> {
+  return adminAccounts.map(({ passwordHash: _, ...admin }) => admin)
 }
 
 // Create admin
@@ -107,71 +109,42 @@ export async function createAdmin(
   password: string,
   name: string,
   role: 'admin' | 'moderator'
-): Promise<{ success: boolean; admin?: AdminAccount; error?: string }> {
-  const supabase = await createClient()
-  
+): Promise<{ success: boolean; admin?: Omit<AdminAccount, 'passwordHash'>; error?: string }> {
   // Check if username exists
-  const { data: existing } = await supabase
-    .from('admins')
-    .select('id')
-    .eq('username', username)
-    .single()
-  
-  if (existing) {
+  if (adminAccounts.find(a => a.username === username)) {
     return { success: false, error: 'Username already exists' }
   }
   
-  const { data: newAdmin, error } = await supabase
-    .from('admins')
-    .insert({
-      username,
-      password,
-      role
-    })
-    .select()
-    .single()
-  
-  if (error) {
-    return { success: false, error: error.message }
+  const newAdmin: AdminAccount = {
+    id: `admin-${Date.now()}`,
+    username,
+    passwordHash: simpleHash(password),
+    name,
+    role,
+    createdAt: Date.now(),
   }
   
-  return {
-    success: true,
-    admin: {
-      id: newAdmin.id,
-      username: newAdmin.username,
-      name: name || newAdmin.username,
-      role: newAdmin.role as 'admin' | 'moderator',
-      createdAt: new Date(newAdmin.created_at).getTime()
-    }
-  }
+  adminAccounts.push(newAdmin)
+  
+  const { passwordHash: _, ...adminWithoutPassword } = newAdmin
+  return { success: true, admin: adminWithoutPassword }
 }
 
 // Delete admin
 export async function deleteAdmin(adminId: string): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
-  
-  // Get all admins to check count
-  const { data: allAdmins } = await supabase.from('admins').select('id, username')
-  
-  if (!allAdmins || allAdmins.length <= 1) {
+  // Prevent deleting the last admin
+  if (adminAccounts.length === 1) {
     return { success: false, error: 'Cannot delete the last admin account' }
   }
   
-  // Find admin to delete
-  const adminToDelete = allAdmins.find(a => a.id === adminId)
-  if (adminToDelete?.username === 'admin') {
+  // Prevent deleting admin-1 (default admin)
+  if (adminId === 'admin-1') {
     return { success: false, error: 'Cannot delete the default admin account' }
   }
   
-  const { error } = await supabase
-    .from('admins')
-    .delete()
-    .eq('id', adminId)
-  
-  if (error) {
-    return { success: false, error: error.message }
-  }
+  adminAccounts = adminAccounts.filter(a => a.id !== adminId)
+  // Also remove their sessions
+  sessions = sessions.filter(s => s.adminId !== adminId)
   
   return { success: true }
 }
@@ -181,16 +154,11 @@ export async function updateAdminPassword(
   adminId: string,
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
-  
-  const { error } = await supabase
-    .from('admins')
-    .update({ password: newPassword })
-    .eq('id', adminId)
-  
-  if (error) {
-    return { success: false, error: error.message }
+  const admin = adminAccounts.find(a => a.id === adminId)
+  if (!admin) {
+    return { success: false, error: 'Admin not found' }
   }
   
+  admin.passwordHash = simpleHash(newPassword)
   return { success: true }
 }
