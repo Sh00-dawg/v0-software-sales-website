@@ -3,10 +3,9 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 
 import { PRODUCTS } from '@/lib/products'
-import { getPaymentMethods } from '@/lib/product-store'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
-import { CheckoutWithMethods } from '@/components/checkout-with-methods'
+import Checkout from '@/components/checkout'
 
 interface CheckoutPageProps {
   params: Promise<{ productId: string }>
@@ -20,10 +19,6 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
     notFound()
   }
 
-  // Fetch enabled payment methods
-  const paymentMethods = await getPaymentMethods()
-  const enabledMethods = paymentMethods.filter(m => m.enabled)
-
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
@@ -34,7 +29,7 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
             className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to products
+            Back to pricing
           </Link>
 
           <div className="mb-8">
@@ -45,12 +40,9 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
             </p>
           </div>
 
-          <CheckoutWithMethods 
-            productId={productId} 
-            productName={product.name}
-            priceInCents={product.priceInCents}
-            paymentMethods={enabledMethods}
-          />
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <Checkout productId={productId} />
+          </div>
         </div>
       </main>
       <Footer />

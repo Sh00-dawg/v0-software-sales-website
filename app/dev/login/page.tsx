@@ -2,12 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Lock, Eye, EyeOff, Zap, User, ArrowLeft } from 'lucide-react'
+import { Lock, Eye, EyeOff, Zap, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { loginAdmin } from '@/app/actions/database'
+import { login } from '@/app/actions/admin'
 
 export default function DevLoginPage() {
   const [username, setUsername] = useState('')
@@ -22,11 +21,11 @@ export default function DevLoginPage() {
     setLoading(true)
     setError('')
 
-    const result = await loginAdmin(username, password)
+    const result = await login(username, password)
 
-    if (result.success && result.admin) {
+    if (result.success && result.token) {
       // Store session token
-      sessionStorage.setItem('admin_token', result.admin.id)
+      sessionStorage.setItem('admin_token', result.token)
       sessionStorage.setItem('admin_user', JSON.stringify(result.admin))
       router.push('/dev/dashboard')
     } else {
@@ -43,14 +42,6 @@ export default function DevLoginPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md"
       >
-        <Link 
-          href="/"
-          className="mb-6 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to main site
-        </Link>
-        
         <div className="rounded-2xl border border-border bg-card p-8 shadow-xl">
           <div className="mb-8 text-center">
             <motion.div
