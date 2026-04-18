@@ -3,14 +3,13 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Lock, Eye, EyeOff, Zap } from 'lucide-react'
+import { Lock, Eye, EyeOff, Zap, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-
-// Simple hardcoded credentials for demo (in production, use proper auth)
-const DEV_PASSWORD = 'test'
+import { login } from '@/app/actions/admin'
 
 export default function DevLoginPage() {
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -22,15 +21,15 @@ export default function DevLoginPage() {
     setLoading(true)
     setError('')
 
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    const result = await login(username, password)
 
-    if (password === DEV_PASSWORD) {
-      // Store auth in session storage
-      sessionStorage.setItem('dev_auth', 'true')
+    if (result.success && result.token) {
+      // Store session token
+      sessionStorage.setItem('admin_token', result.token)
+      sessionStorage.setItem('admin_user', JSON.stringify(result.admin))
       router.push('/dev/dashboard')
     } else {
-      setError('Invalid password')
+      setError(result.error || 'Invalid credentials')
     }
     setLoading(false)
   }
@@ -55,18 +54,30 @@ export default function DevLoginPage() {
             </motion.div>
             <h1 className="text-2xl font-bold">Developer Portal</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Enter your password to access the dashboard
+              Sign in with your admin credentials
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="relative">
+              <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Enter password"
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pr-10"
+                className="pl-10 pr-10"
               />
               <button
                 type="button"
@@ -87,8 +98,8 @@ export default function DevLoginPage() {
               </motion.p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Authenticating...' : 'Access Dashboard'}
+            <Button type="submit" className="w-full" disabled={loading || !username || !password}>
+              {loading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
 
@@ -99,6 +110,7 @@ export default function DevLoginPage() {
         </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
+          Default: admin / admin123
         </p>
       </motion.div>
     </div>

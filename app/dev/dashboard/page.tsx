@@ -21,6 +21,9 @@ import {
   X,
   FileDown,
   Edit3,
+  Users,
+  UserPlus,
+  Shield,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +35,7 @@ import {
   fetchAllProductKeys,
   removeProductKey,
 } from '@/app/actions/products'
+import { checkSession, logout, fetchAdmins, addAdmin, removeAdmin } from '@/app/actions/admin'
 import type { AnalyticsData } from '@/lib/analytics'
 import type { Product } from '@/lib/products'
 import type { ProductKey } from '@/lib/product-store'
@@ -46,52 +50,91 @@ interface Stats {
   conversionRate: string
 }
 
-type Tab = 'overview' | 'products' | 'keys'
+interface AdminAccount {
+  id: string
+  username: string
+  name: string
+  role: 'admin' | 'moderator'
+  createdAt: number
+  lastLogin?: number
+}
+
+type Tab = 'overview' | 'products' | 'keys' | 'admins'
 
 export default function DevDashboardPage() {
   const [isAuthed, setIsAuthed] = useState(false)
+  const [currentAdmin, setCurrentAdmin] = useState<AdminAccount | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [products, setProducts] = useState<(Product & { imageUrl?: string; filePathname?: string })[]>([])
   const [productKeys, setProductKeys] = useState<ProductKey[]>([])
+  const [admins, setAdmins] = useState<AdminAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [editingProduct, setEditingProduct] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<Product> & { imageUrl?: string }>({})
   const [newKeys, setNewKeys] = useState<{ [productId: string]: string }>({})
-  const [uploading, setUploading] = useState<{ [productId: string]: boolean }>({})
+  const [uploading, setUploading] = useState<{ [key: string]: boolean }>({})
   const [saving, setSaving] = useState(false)
+  const [newAdmin, setNewAdmin] = useState({ username: '', password: '', name: '', role: 'moderator' as 'admin' | 'moderator' })
+  const [showAddAdmin, setShowAddAdmin] = useState(false)
+  const [adminError, setAdminError] = useState('')
   const router = useRouter()
 
   const loadData = useCallback(async () => {
     setRefreshing(true)
-    const [statsData, analyticsData, productsData, keysData] = await Promise.all([
-      fetchStats(),
-      fetchAnalyticsData(),
-      fetchProducts(),
-      fetchAllProductKeys(),
-    ])
-    setStats(statsData)
-    setAnalytics(analyticsData)
-    setProducts(productsData)
-    setProductKeys(keysData)
+    try {
+      const [statsData, analyticsData, productsData, keysData, adminsData] = await Promise.all([
+        fetchStats(),
+        fetchAnalyticsData(),
+        fetchProducts(),
+        fetchAllProductKeys(),
+        fetchAdmins(),
+      ])
+      setStats(statsData)
+      setAnalytics(analyticsData)
+      setProducts(productsData)
+      setProductKeys(keysData)
+      setAdmins(adminsData)
+    } catch (error) {
+      console.error('Failed to load data:', error)
+    }
     setLoading(false)
     setRefreshing(false)
   }, [])
 
   useEffect(() => {
-    const auth = sessionStorage.getItem('dev_auth')
-    if (auth !== 'true') {
-      router.push('/dev/login')
-    } else {
+    const verifyAuth = async () => {
+      const token = sessionStorage.getItem('admin_token')
+      if (!token) {
+        router.push('/dev/login')
+        return
+      }
+
+      const result = await checkSession(token)
+      if (!result.valid) {
+        sessionStorage.removeItem('admin_token')
+        sessionStorage.removeItem('admin_user')
+        router.push('/dev/login')
+        return
+      }
+
+      setCurrentAdmin(result.admin as AdminAccount)
       setIsAuthed(true)
       loadData()
     }
+
+    verifyAuth()
   }, [router, loadData])
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('dev_auth')
+  const handleLogout = async () => {
+    const token = sessionStorage.getItem('admin_token')
+    if (token) {
+      await logout(token)
+    }
+    sessionStorage.removeItem('admin_token')
+    sessionStorage.removeItem('admin_user')
     router.push('/dev/login')
   }
 
@@ -114,15 +157,20 @@ export default function DevDashboardPage() {
 
   const handleSaveProduct = async (productId: string) => {
     setSaving(true)
-    await saveProduct(productId, editForm)
-    await loadData()
-    setEditingProduct(null)
-    setEditForm({})
+    try {
+      await saveProduct(productId, editForm)
+      await loadData()
+      setEditingProduct(null)
+      setEditForm({})
+    } catch (error) {
+      console.error('Failed to save product:', error)
+    }
     setSaving(false)
   }
 
   const handleFileUpload = async (productId: string, file: File, type: 'image' | 'product-file') => {
-    setUploading((prev) => ({ ...prev, [productId]: true }))
+    const uploadKey = `${productId}-${type}`
+    setUploading((prev) => ({ ...prev, [uploadKey]: true }))
     
     const formData = new FormData()
     formData.append('file', file)
@@ -135,6 +183,10 @@ export default function DevDashboardPage() {
         body: formData,
       })
       
+      if (!res.ok) {
+        throw new Error('Upload failed')
+      }
+      
       const data = await res.json()
       
       if (type === 'image') {
@@ -146,9 +198,10 @@ export default function DevDashboardPage() {
       await loadData()
     } catch (error) {
       console.error('Upload failed:', error)
+      alert('Upload failed. Please try again.')
     }
     
-    setUploading((prev) => ({ ...prev, [productId]: false }))
+    setUploading((prev) => ({ ...prev, [uploadKey]: false }))
   }
 
   const handleAddKeys = async (productId: string) => {
@@ -158,14 +211,51 @@ export default function DevDashboardPage() {
     const keys = keysText.split('\n').map((k) => k.trim()).filter(Boolean)
     if (keys.length === 0) return
     
-    await createProductKeys(productId, keys)
-    setNewKeys((prev) => ({ ...prev, [productId]: '' }))
-    await loadData()
+    try {
+      await createProductKeys(productId, keys)
+      setNewKeys((prev) => ({ ...prev, [productId]: '' }))
+      await loadData()
+    } catch (error) {
+      console.error('Failed to add keys:', error)
+    }
   }
 
   const handleDeleteKey = async (keyId: string) => {
-    await removeProductKey(keyId)
-    await loadData()
+    try {
+      await removeProductKey(keyId)
+      await loadData()
+    } catch (error) {
+      console.error('Failed to delete key:', error)
+    }
+  }
+
+  const handleAddAdmin = async () => {
+    if (!newAdmin.username || !newAdmin.password || !newAdmin.name) {
+      setAdminError('All fields are required')
+      return
+    }
+    
+    const result = await addAdmin(newAdmin.username, newAdmin.password, newAdmin.name, newAdmin.role)
+    
+    if (result.success) {
+      setNewAdmin({ username: '', password: '', name: '', role: 'moderator' })
+      setShowAddAdmin(false)
+      setAdminError('')
+      await loadData()
+    } else {
+      setAdminError(result.error || 'Failed to create admin')
+    }
+  }
+
+  const handleDeleteAdmin = async (adminId: string) => {
+    if (!confirm('Are you sure you want to delete this admin?')) return
+    
+    const result = await removeAdmin(adminId)
+    if (result.success) {
+      await loadData()
+    } else {
+      alert(result.error || 'Failed to delete admin')
+    }
   }
 
   if (!isAuthed || loading) {
@@ -216,6 +306,7 @@ export default function DevDashboardPage() {
     { id: 'overview' as Tab, label: 'Overview', icon: TrendingUp },
     { id: 'products' as Tab, label: 'Products', icon: Package },
     { id: 'keys' as Tab, label: 'Product Keys', icon: Key },
+    { id: 'admins' as Tab, label: 'Admin Accounts', icon: Users },
   ]
 
   return (
@@ -229,7 +320,9 @@ export default function DevDashboardPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold">Zentro Services</h1>
-              <p className="text-xs text-muted-foreground">Developer Dashboard</p>
+              <p className="text-xs text-muted-foreground">
+                Logged in as {currentAdmin?.name} ({currentAdmin?.role})
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -252,12 +345,12 @@ export default function DevDashboardPage() {
 
       {/* Tabs */}
       <div className="border-b border-border bg-card/50">
-        <div className="mx-auto flex max-w-7xl gap-1 px-4">
+        <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -319,7 +412,7 @@ export default function DevDashboardPage() {
                 <div className="max-h-80 overflow-auto p-4">
                   {analytics?.purchases && analytics.purchases.length > 0 ? (
                     <div className="space-y-3">
-                      {analytics.purchases.map((purchase) => (
+                      {analytics.purchases.slice(0, 10).map((purchase) => (
                         <div
                           key={purchase.id}
                           className="flex items-center justify-between rounded-lg bg-secondary/50 p-3"
@@ -366,7 +459,7 @@ export default function DevDashboardPage() {
                 <div className="max-h-80 overflow-auto p-4">
                   {analytics?.abandonedCheckouts && analytics.abandonedCheckouts.length > 0 ? (
                     <div className="space-y-3">
-                      {analytics.abandonedCheckouts.map((abandoned) => (
+                      {analytics.abandonedCheckouts.slice(0, 10).map((abandoned) => (
                         <div
                           key={abandoned.id}
                           className="flex items-center justify-between rounded-lg bg-secondary/50 p-3"
@@ -403,7 +496,11 @@ export default function DevDashboardPage() {
         {/* Products Tab */}
         {activeTab === 'products' && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold">Product Management</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Product Management</h2>
+              <p className="text-sm text-muted-foreground">Edit product details, upload images and files</p>
+            </div>
+            
             <div className="grid gap-6">
               {products.map((product) => (
                 <motion.div
@@ -424,7 +521,7 @@ export default function DevDashboardPage() {
                             disabled={saving}
                           >
                             <Save className="mr-2 h-4 w-4" />
-                            {saving ? 'Saving...' : 'Save'}
+                            {saving ? 'Saving...' : 'Save Changes'}
                           </Button>
                           <Button size="sm" variant="outline" onClick={cancelEditing}>
                             <X className="mr-2 h-4 w-4" />
@@ -435,10 +532,11 @@ export default function DevDashboardPage() {
                       
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
-                          <label className="mb-1 block text-sm font-medium">Name</label>
+                          <label className="mb-1 block text-sm font-medium">Product Name</label>
                           <Input
                             value={editForm.name || ''}
                             onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                            placeholder="Enter product name"
                           />
                         </div>
                         <div>
@@ -446,6 +544,7 @@ export default function DevDashboardPage() {
                           <Input
                             value={editForm.tagline || ''}
                             onChange={(e) => setEditForm((prev) => ({ ...prev, tagline: e.target.value }))}
+                            placeholder="Short description"
                           />
                         </div>
                         <div>
@@ -453,30 +552,36 @@ export default function DevDashboardPage() {
                           <Input
                             type="number"
                             value={editForm.priceInCents || 0}
-                            onChange={(e) => setEditForm((prev) => ({ ...prev, priceInCents: parseInt(e.target.value) }))}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, priceInCents: parseInt(e.target.value) || 0 }))}
+                            placeholder="e.g., 4900 for $49"
                           />
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Display price: ${((editForm.priceInCents || 0) / 100).toFixed(2)}
+                          </p>
                         </div>
                         <div>
                           <label className="mb-1 block text-sm font-medium">Version</label>
                           <Input
                             value={editForm.version || ''}
                             onChange={(e) => setEditForm((prev) => ({ ...prev, version: e.target.value }))}
+                            placeholder="e.g., 2.0.1"
                           />
                         </div>
                         <div className="md:col-span-2">
                           <label className="mb-1 block text-sm font-medium">Description</label>
                           <textarea
-                            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                             rows={3}
                             value={editForm.description || ''}
                             onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+                            placeholder="Full product description"
                           />
                         </div>
                       </div>
                     </div>
                   ) : (
                     // View Mode
-                    <div className="flex flex-col gap-6 md:flex-row">
+                    <div className="flex flex-col gap-6 lg:flex-row">
                       <div className="flex-1">
                         <div className="mb-4 flex items-start justify-between">
                           <div>
@@ -485,39 +590,46 @@ export default function DevDashboardPage() {
                           </div>
                           <Button size="sm" variant="outline" onClick={() => startEditing(product)}>
                             <Edit3 className="mr-2 h-4 w-4" />
-                            Edit
+                            Edit Details
                           </Button>
                         </div>
                         
-                        <p className="mb-4 text-sm text-muted-foreground">{product.description}</p>
+                        <p className="mb-4 text-sm text-muted-foreground line-clamp-2">{product.description}</p>
                         
                         <div className="flex flex-wrap gap-4 text-sm">
-                          <span className="font-medium">
-                            Price: <span className="text-primary">${(product.priceInCents / 100).toFixed(0)}</span>
+                          <span className="rounded-lg bg-primary/10 px-3 py-1 font-medium text-primary">
+                            ${(product.priceInCents / 100).toFixed(0)}
                           </span>
-                          <span className="text-muted-foreground">Version: {product.version}</span>
-                          <span className="text-muted-foreground">
-                            Keys Available: {productKeys.filter((k) => k.productId === product.id && !k.isUsed).length}
+                          <span className="rounded-lg bg-secondary px-3 py-1 text-muted-foreground">
+                            v{product.version}
+                          </span>
+                          <span className="rounded-lg bg-secondary px-3 py-1 text-muted-foreground">
+                            {productKeys.filter((k) => k.productId === product.id && !k.isUsed).length} keys available
                           </span>
                         </div>
                       </div>
                       
                       {/* File Uploads */}
-                      <div className="flex flex-col gap-3 md:w-64">
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      <div className="flex flex-col gap-4 lg:w-72">
+                        <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                          <label className="mb-2 block text-sm font-medium">
                             Product Image
                           </label>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
                             <label className="flex-1 cursor-pointer">
-                              <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-secondary/30 px-3 py-2 text-xs hover:bg-secondary/50">
-                                <Upload className="mr-2 h-3 w-3" />
-                                {uploading[`${product.id}-image`] ? 'Uploading...' : product.imageUrl ? 'Replace' : 'Upload Image'}
+                              <div className={`flex items-center justify-center rounded-lg border-2 border-dashed px-4 py-3 text-sm transition-colors ${
+                                uploading[`${product.id}-image`] 
+                                  ? 'border-primary bg-primary/5' 
+                                  : 'border-border hover:border-primary hover:bg-primary/5'
+                              }`}>
+                                <Upload className="mr-2 h-4 w-4" />
+                                {uploading[`${product.id}-image`] ? 'Uploading...' : 'Upload Image'}
                               </div>
                               <input
                                 type="file"
                                 accept="image/*"
                                 className="hidden"
+                                disabled={uploading[`${product.id}-image`]}
                                 onChange={(e) => {
                                   const file = e.target.files?.[0]
                                   if (file) handleFileUpload(product.id, file, 'image')
@@ -525,24 +637,32 @@ export default function DevDashboardPage() {
                               />
                             </label>
                             {product.imageUrl && (
-                              <span className="text-xs text-emerald-500">Uploaded</span>
+                              <span className="flex items-center gap-1 text-xs text-emerald-500">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                Uploaded
+                              </span>
                             )}
                           </div>
                         </div>
                         
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                            Product File (Download)
+                        <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                          <label className="mb-2 block text-sm font-medium">
+                            Downloadable File
                           </label>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
                             <label className="flex-1 cursor-pointer">
-                              <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-secondary/30 px-3 py-2 text-xs hover:bg-secondary/50">
-                                <FileDown className="mr-2 h-3 w-3" />
-                                {uploading[`${product.id}-file`] ? 'Uploading...' : product.filePathname ? 'Replace File' : 'Upload File'}
+                              <div className={`flex items-center justify-center rounded-lg border-2 border-dashed px-4 py-3 text-sm transition-colors ${
+                                uploading[`${product.id}-product-file`] 
+                                  ? 'border-primary bg-primary/5' 
+                                  : 'border-border hover:border-primary hover:bg-primary/5'
+                              }`}>
+                                <FileDown className="mr-2 h-4 w-4" />
+                                {uploading[`${product.id}-product-file`] ? 'Uploading...' : 'Upload File'}
                               </div>
                               <input
                                 type="file"
                                 className="hidden"
+                                disabled={uploading[`${product.id}-product-file`]}
                                 onChange={(e) => {
                                   const file = e.target.files?.[0]
                                   if (file) handleFileUpload(product.id, file, 'product-file')
@@ -550,7 +670,10 @@ export default function DevDashboardPage() {
                               />
                             </label>
                             {product.filePathname && (
-                              <span className="text-xs text-emerald-500">Ready</span>
+                              <span className="flex items-center gap-1 text-xs text-emerald-500">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                Ready
+                              </span>
                             )}
                           </div>
                         </div>
@@ -566,7 +689,10 @@ export default function DevDashboardPage() {
         {/* Keys Tab */}
         {activeTab === 'keys' && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold">Product Keys Management</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Product Keys Management</h2>
+              <p className="text-sm text-muted-foreground">Add and manage license keys for each product</p>
+            </div>
             
             {products.map((product) => {
               const keys = productKeys.filter((k) => k.productId === product.id)
@@ -598,17 +724,18 @@ export default function DevDashboardPage() {
                       <label className="mb-2 block text-sm font-medium">
                         Add Product Keys (one per line)
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-3">
                         <textarea
-                          className="flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
+                          className="flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                           rows={3}
-                          placeholder="XXXXX-XXXXX-XXXXX&#10;YYYYY-YYYYY-YYYYY&#10;ZZZZZ-ZZZZZ-ZZZZZ"
+                          placeholder={`XXXXX-XXXXX-XXXXX\nYYYYY-YYYYY-YYYYY\nZZZZZ-ZZZZZ-ZZZZZ`}
                           value={newKeys[product.id] || ''}
                           onChange={(e) => setNewKeys((prev) => ({ ...prev, [product.id]: e.target.value }))}
                         />
                         <Button 
                           onClick={() => handleAddKeys(product.id)}
-                          disabled={!newKeys[product.id]}
+                          disabled={!newKeys[product.id]?.trim()}
+                          className="shrink-0"
                         >
                           <Plus className="mr-2 h-4 w-4" />
                           Add Keys
@@ -617,73 +744,209 @@ export default function DevDashboardPage() {
                     </div>
                     
                     {/* Keys List */}
-                    {keys.length > 0 && (
-                      <div className="space-y-4">
+                    {keys.length > 0 ? (
+                      <div className="grid gap-4 lg:grid-cols-2">
                         {/* Available Keys */}
-                        {availableKeys.length > 0 && (
-                          <div>
-                            <h4 className="mb-2 text-sm font-medium text-emerald-500">
-                              Available Keys ({availableKeys.length})
-                            </h4>
-                            <div className="max-h-40 space-y-1 overflow-auto">
-                              {availableKeys.map((key) => (
+                        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
+                          <h4 className="mb-3 flex items-center gap-2 text-sm font-medium text-emerald-500">
+                            <Key className="h-4 w-4" />
+                            Available Keys ({availableKeys.length})
+                          </h4>
+                          <div className="max-h-48 space-y-2 overflow-auto">
+                            {availableKeys.length > 0 ? (
+                              availableKeys.map((key) => (
                                 <div
                                   key={key.id}
-                                  className="flex items-center justify-between rounded bg-emerald-500/10 px-3 py-2"
+                                  className="flex items-center justify-between rounded bg-background px-3 py-2"
                                 >
                                   <code className="font-mono text-sm">{key.key}</code>
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     onClick={() => handleDeleteKey(key.id)}
-                                    className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                    className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                   >
                                     <Trash2 className="h-3 w-3" />
                                   </Button>
                                 </div>
-                              ))}
-                            </div>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No available keys</p>
+                            )}
                           </div>
-                        )}
+                        </div>
                         
                         {/* Used Keys */}
-                        {usedKeys.length > 0 && (
-                          <div>
-                            <h4 className="mb-2 text-sm font-medium text-muted-foreground">
-                              Used Keys ({usedKeys.length})
-                            </h4>
-                            <div className="max-h-40 space-y-1 overflow-auto">
-                              {usedKeys.map((key) => (
+                        <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                          <h4 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                            <Key className="h-4 w-4" />
+                            Used Keys ({usedKeys.length})
+                          </h4>
+                          <div className="max-h-48 space-y-2 overflow-auto">
+                            {usedKeys.length > 0 ? (
+                              usedKeys.map((key) => (
                                 <div
                                   key={key.id}
-                                  className="flex items-center justify-between rounded bg-secondary/50 px-3 py-2"
+                                  className="rounded bg-background px-3 py-2"
                                 >
-                                  <div>
-                                    <code className="font-mono text-sm text-muted-foreground">{key.key}</code>
-                                    <p className="text-xs text-muted-foreground">
-                                      Used by: {key.usedBy}
-                                    </p>
-                                  </div>
-                                  <span className="text-xs text-muted-foreground">
-                                    {key.usedAt && new Date(key.usedAt).toLocaleDateString()}
-                                  </span>
+                                  <code className="font-mono text-sm text-muted-foreground">{key.key}</code>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Used by: {key.usedBy} on {key.usedAt && new Date(key.usedAt).toLocaleDateString()}
+                                  </p>
                                 </div>
-                              ))}
-                            </div>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No used keys</p>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
-                    )}
-                    
-                    {keys.length === 0 && (
-                      <div className="flex h-20 items-center justify-center text-muted-foreground">
-                        <p className="text-sm">No keys added yet. Add keys above.</p>
+                    ) : (
+                      <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground">
+                        <p className="text-sm">No keys added yet. Add keys above to get started.</p>
                       </div>
                     )}
                   </div>
                 </motion.div>
               )
             })}
+          </div>
+        )}
+
+        {/* Admins Tab */}
+        {activeTab === 'admins' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Admin Accounts</h2>
+                <p className="text-sm text-muted-foreground">Manage who can access the developer portal</p>
+              </div>
+              <Button onClick={() => setShowAddAdmin(true)}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add Admin
+              </Button>
+            </div>
+
+            {/* Add Admin Form */}
+            {showAddAdmin && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl border border-primary bg-card p-6"
+              >
+                <h3 className="mb-4 font-semibold">Create New Admin Account</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Username</label>
+                    <Input
+                      value={newAdmin.username}
+                      onChange={(e) => setNewAdmin((prev) => ({ ...prev, username: e.target.value }))}
+                      placeholder="Enter username"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Password</label>
+                    <Input
+                      type="password"
+                      value={newAdmin.password}
+                      onChange={(e) => setNewAdmin((prev) => ({ ...prev, password: e.target.value }))}
+                      placeholder="Enter password"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Display Name</label>
+                    <Input
+                      value={newAdmin.name}
+                      onChange={(e) => setNewAdmin((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="Enter name"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Role</label>
+                    <select
+                      value={newAdmin.role}
+                      onChange={(e) => setNewAdmin((prev) => ({ ...prev, role: e.target.value as 'admin' | 'moderator' }))}
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="moderator">Moderator</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {adminError && (
+                  <p className="mt-3 text-sm text-red-500">{adminError}</p>
+                )}
+                
+                <div className="mt-4 flex gap-2">
+                  <Button onClick={handleAddAdmin}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Admin
+                  </Button>
+                  <Button variant="outline" onClick={() => {
+                    setShowAddAdmin(false)
+                    setAdminError('')
+                    setNewAdmin({ username: '', password: '', name: '', role: 'moderator' })
+                  }}>
+                    Cancel
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Admin List */}
+            <div className="grid gap-4">
+              {admins.map((admin) => (
+                <motion.div
+                  key={admin.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center justify-between rounded-xl border border-border bg-card p-4"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${
+                      admin.role === 'admin' ? 'bg-primary' : 'bg-secondary'
+                    }`}>
+                      <Shield className={`h-6 w-6 ${
+                        admin.role === 'admin' ? 'text-primary-foreground' : 'text-muted-foreground'
+                      }`} />
+                    </div>
+                    <div>
+                      <p className="font-semibold">{admin.name}</p>
+                      <p className="text-sm text-muted-foreground">@{admin.username}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <span className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        admin.role === 'admin' 
+                          ? 'bg-primary/20 text-primary' 
+                          : 'bg-secondary text-muted-foreground'
+                      }`}>
+                        {admin.role}
+                      </span>
+                      {admin.lastLogin && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Last login: {new Date(admin.lastLogin).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                    
+                    {admin.id !== 'admin-1' && currentAdmin?.role === 'admin' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteAdmin(admin.id)}
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
           </div>
         )}
       </main>
